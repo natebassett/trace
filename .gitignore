@@ -1,2 +1,6 @@
 /docs/REQUIREMENTS.md
 /docs/ROADMAP.md
+/node_modules/
+/dist/
+/coverage/
+*.tsbuildinfo
