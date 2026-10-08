@@ -1,6 +1,6 @@
 # Development guide
 
-Trace is built in small branches. Each branch should add one reviewable capability and leave the project building. You do not need to understand the whole codebase before working on one branch.
+Trace is built in small branches. Each branch should add one reviewable capability and leave the project building. Use a few focused commits within a feature branch so the history shows how it was built. You do not need to understand the whole codebase before working on one branch.
 
 ## Start work
 
