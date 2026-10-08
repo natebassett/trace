@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "repositoryId": "repo",
+  "nodes": [
+    { "id": "repo", "kind": "repository", "label": "sample" },
+    { "id": "main", "kind": "module", "label": "main.ts", "parentId": "repo", "path": "src/main.ts", "languageId": "typescript" },
+    { "id": "helpers", "kind": "module", "label": "helpers.ts", "parentId": "repo", "path": "src/helpers.ts", "languageId": "typescript" },
+    { "id": "start", "kind": "symbol", "label": "start", "parentId": "main", "qualifiedName": "start", "symbolKind": "function", "location": { "path": "src/main.ts", "start": { "line": 2, "column": 1 }, "end": { "line": 6, "column": 2 } } },
+    { "id": "load", "kind": "symbol", "label": "load", "parentId": "helpers", "qualifiedName": "load", "symbolKind": "function", "location": { "path": "src/helpers.ts", "start": { "line": 1, "column": 1 }, "end": { "line": 2, "column": 2 } } },
+    { "id": "save", "kind": "symbol", "label": "save", "parentId": "helpers", "qualifiedName": "save", "symbolKind": "function", "location": { "path": "src/helpers.ts", "start": { "line": 3, "column": 1 }, "end": { "line": 4, "column": 2 } } },
+    { "id": "dynamic", "kind": "boundary", "label": "handler target", "parentId": "main", "boundaryKind": "unresolved" }
+  ],
+  "edges": [
+    { "id": "start-load", "from": "start", "to": "load", "kind": "calls", "status": "resolved", "evidence": { "span": { "path": "src/main.ts", "start": { "line": 3, "column": 3 }, "end": { "line": 3, "column": 9 } }, "adapterId": "fixture", "method": "direct-call" } },
+    { "id": "start-save", "from": "start", "to": "save", "kind": "calls", "status": "resolved", "evidence": { "span": { "path": "src/main.ts", "start": { "line": 4, "column": 3 }, "end": { "line": 4, "column": 9 } }, "adapterId": "fixture", "method": "direct-call" } },
+    { "id": "start-dynamic", "from": "start", "to": "dynamic", "kind": "calls", "status": "unresolved", "evidence": { "span": { "path": "src/main.ts", "start": { "line": 5, "column": 3 }, "end": { "line": 5, "column": 12 } }, "adapterId": "fixture", "method": "indirect-call" } }
+  ],
+  "diagnostics": [
+    { "code": "INDIRECT_CALL", "severity": "warning", "message": "The handler target cannot be determined statically.", "location": { "path": "src/main.ts", "start": { "line": 5, "column": 3 }, "end": { "line": 5, "column": 12 } } }
+  ]
+}
