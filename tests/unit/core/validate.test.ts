@@ -88,3 +88,19 @@ test("missing source locations and unknown statuses are rejected", () => {
   assert.ok(codes.includes("INVALID_SPAN"));
   assert.ok(codes.includes("INVALID_STATUS"));
 });
+
+test("fixture call-site evidence matches the example repository", () => {
+  const expectedCalls = new Map([
+    ["load", "load()"],
+    ["save", "save()"],
+    ["dynamic", "handler()"],
+  ]);
+  const root = resolve("tests/fixtures/graph-contract/sample");
+
+  for (const edge of fixture.edges) {
+    const { path, start, end } = edge.evidence.span;
+    assert.equal(start.line, end.line);
+    const line = readFileSync(resolve(root, path), "utf8").split(/\r?\n/)[start.line - 1]!;
+    assert.equal(line.slice(start.column - 1, end.column - 1), expectedCalls.get(edge.to));
+  }
+});

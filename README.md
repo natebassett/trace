@@ -18,7 +18,7 @@ The CLI currently shows help and reports unsupported commands. Repository scanni
 
 ## Repository layout
 
-Source code lives in `src/`, checks and sample projects in `tests/`, and documentation in `docs/`. See the [repository layout](docs/REPOSITORY_LAYOUT.md) for the planned modules and dependency direction.
+Source code lives in `src/`, checks and sample projects in `tests/`, and documentation in `docs/`. See the [repository layout](docs/REPOSITORY_LAYOUT.md) for the planned modules and dependency direction, and the [graph contract](docs/GRAPH_CONTRACT.md) for how connections are represented.
 
 ## Branches
 
