@@ -9,7 +9,7 @@ Trace is built in small branches. Each branch should add one reviewable capabili
 3. Run `npm ci` to install the exact dependency versions in `package-lock.json`.
 4. Run `npm test` to build the code and run its checks.
 
-The current branch, `feature/workspace-foundation`, sets up these commands and a small CLI. It does not analyse code yet.
+The scan command inventories files and likely languages. It does not analyse function relationships yet.
 
 ## Branch flow
 
@@ -41,4 +41,4 @@ Create a folder when its first real implementation lands. [Repository layout](RE
 | `npm run build` | Compiles TypeScript into the ignored `dist/` folder. |
 | `npm test` | Builds and runs the automated tests. |
 
-The next feature branch will define the language-neutral graph model: how Trace names functions and records connections, evidence, and uncertainty.
+The next analysis feature will use the language-neutral graph model to record code relationships with evidence and uncertainty.
