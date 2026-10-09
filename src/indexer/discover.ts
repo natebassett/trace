@@ -185,6 +185,3 @@ export async function discoverRepository(
   skipped.sort((a, b) => a.path.localeCompare(b.path));
   return { root, files, skipped, diagnostics, gitIgnoreApplied };
 }
-
-
-

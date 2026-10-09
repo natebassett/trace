@@ -61,3 +61,15 @@ test("discovery stops when cancelled", async () => {
     await assert.rejects(discoverRepository(root, { signal: controller.signal }), { name: "AbortError" });
   });
 });
+
+test("discovery stops after a progress callback cancels the scan", async () => {
+  await withDirectory(async (root) => {
+    await writeFile(join(root, "first.py"), "pass\n");
+    await writeFile(join(root, "second.py"), "pass\n");
+    const controller = new AbortController();
+    await assert.rejects(discoverRepository(root, {
+      signal: controller.signal,
+      onProgress: () => controller.abort(),
+    }), { name: "AbortError" });
+  });
+});
