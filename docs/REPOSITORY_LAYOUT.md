@@ -9,7 +9,7 @@ trace/
 │   ├── core/                 graph schema, symbol IDs, edge types, evidence
 │   ├── indexer/              file discovery, scan coordination, cache, refresh
 │   ├── adapters/             language and framework-specific analysers
-│   │   └── javascript-typescript/   proposed first adapter
+│   │   └── javascript-typescript/   first source adapter
 │   ├── query/                callers, callees, paths and scoped expansion
 │   ├── explanations/         source-backed, rule-based descriptions
 │   ├── viewer/               shared interactive graph and source panels

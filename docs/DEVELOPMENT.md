@@ -41,4 +41,4 @@ Create a folder when its first real implementation lands. [Repository layout](RE
 | `npm run build` | Compiles TypeScript into the ignored `dist/` folder. |
 | `npm test` | Builds and runs the automated tests. |
 
-The next analysis feature will use the language-neutral graph model to record code relationships with evidence and uncertainty.
+The JavaScript/TypeScript adapter now emits function and call facts using the language-neutral graph model. The next feature should connect repository discovery to adapter execution and expose a validated graph through the CLI.
