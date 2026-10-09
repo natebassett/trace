@@ -107,10 +107,16 @@ function qualifiedName(node: ts.FunctionDeclaration): string {
   return names.join(".");
 }
 
+function bindingNames(name: ts.BindingName): ts.Identifier[] {
+  if (ts.isIdentifier(name)) return [name];
+  return name.elements.flatMap((element) =>
+    ts.isOmittedExpression(element) ? [] : bindingNames(element.name));
+}
+
 /** Syntax and type-checker-backed analysis of named functions in supplied source files. */
 export class JavaScriptTypeScriptAdapter implements LanguageAdapter {
   readonly id = "javascript-typescript";
-  readonly version = "1";
+  readonly version = "2";
   readonly languageIds = ["javascript", "typescript"] as const;
 
   supports(path: string): boolean {
@@ -165,6 +171,25 @@ export class JavaScriptTypeScriptAdapter implements LanguageAdapter {
       if (syntaxErrors.length > 0) {
         invalidPaths.add(file.path);
         continue;
+      }
+
+      const globals = new Set<string>();
+      for (const statement of source.statements) {
+        if (!ts.isVariableStatement(statement)) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          for (const name of bindingNames(declaration.name)) {
+            if (globals.has(name.text)) continue;
+            globals.add(name.text);
+            nodes.push({
+              id: createNodeId(input.repositoryId, "state", file.path + "::" + name.text),
+              kind: "state",
+              label: name.text,
+              parentId: moduleId,
+              stateKind: "global",
+              location: span(source, declaration.getStart(source), declaration.getEnd()),
+            });
+          }
+        }
       }
 
       function collect(node: ts.Node): void {

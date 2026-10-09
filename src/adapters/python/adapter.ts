@@ -15,6 +15,13 @@ interface PythonDefinition {
   readonly span: SourceSpan;
 }
 
+interface PythonGlobal {
+  readonly key: string;
+  readonly path: string;
+  readonly name: string;
+  readonly span: SourceSpan;
+}
+
 interface PythonCall {
   readonly path: string;
   readonly callerKey: string | null;
@@ -26,6 +33,7 @@ interface PythonCall {
 
 interface PythonFacts {
   readonly definitions: readonly PythonDefinition[];
+  readonly globals: readonly PythonGlobal[];
   readonly calls: readonly PythonCall[];
   readonly diagnostics: readonly GraphDiagnostic[];
 }
@@ -105,7 +113,7 @@ async function parsePython(files: readonly SourceFile[], signal: AbortSignal): P
 /** Python AST analysis; the scanned project is never imported or executed. */
 export class PythonAdapter implements LanguageAdapter {
   readonly id = "python";
-  readonly version = "2";
+  readonly version = "3";
   readonly languageIds = ["python"] as const;
 
   supports(path: string): boolean {
@@ -147,6 +155,17 @@ export class PythonAdapter implements LanguageAdapter {
         qualifiedName: definition.qualifiedName,
         symbolKind: definition.kind,
         location: definition.span,
+      });
+    }
+
+    for (const global of facts.globals) {
+      nodes.push({
+        id: createNodeId(input.repositoryId, "state", global.key),
+        kind: "state",
+        label: global.name,
+        parentId: createNodeId(input.repositoryId, "module", global.path),
+        stateKind: "global",
+        location: global.span,
       });
     }
 

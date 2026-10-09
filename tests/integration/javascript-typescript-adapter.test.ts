@@ -128,3 +128,22 @@ test("the adapter supports the first four source extensions and rejects bad inpu
   controller.abort();
   await assert.rejects(adapter.analyze({ repositoryId, files }, controller.signal), { name: "AbortError" });
 });
+
+test("top-level declarations appear as file globals without function locals", async () => {
+  const adapter = new JavaScriptTypeScriptAdapter();
+  const result = await adapter.analyze({
+    repositoryId,
+    files: [{
+      path: "src/settings.ts",
+      content: [
+        "export const limit = 3;",
+        "let first = 1, second = 2;",
+        "const { name } = { name: 'Trace' };",
+        "function run() { const local = 1; }",
+      ].join("\n"),
+    }],
+  }, new AbortController().signal);
+  const globals = result.nodes.filter((node) => node.kind === "state" && node.stateKind === "global");
+  assert.deepEqual(globals.map((node) => node.label), ["limit", "first", "second", "name"]);
+  assert.deepEqual(globals.map((node) => node.kind === "state" ? node.location.start.line : -1), [1, 2, 2, 3]);
+});

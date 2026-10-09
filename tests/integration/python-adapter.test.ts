@@ -170,3 +170,21 @@ test("Python instance-field reassignment does not claim a method target", async 
   const runCall = result.edges.find((edge) => edge.evidence.span.start.line === 7);
   assert.equal(runCall?.status, "unresolved");
 });
+
+test("module assignments appear as file globals without local variables", async () => {
+  const result = await adapter.analyze({
+    repositoryId,
+    files: [{
+      path: "settings.py",
+      content: [
+        "LIMIT = 3",
+        "name: str = 'mavis'",
+        "LIMIT = 4",
+        "def run():",
+        "    local = 1",
+      ].join("\n"),
+    }],
+  }, new AbortController().signal);
+  const globals = result.nodes.filter((node) => node.kind === "state" && node.stateKind === "global");
+  assert.deepEqual(globals.map((node) => [node.label, node.kind === "state" ? node.location.start.line : -1]), [["LIMIT", 1], ["name", 2]]);
+});

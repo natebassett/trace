@@ -50,6 +50,7 @@ class Analyzer:
         self.scopes = {}
         self.classes = {}
         self.definitions = []
+        self.globals = {}
         self.calls = []
         self.diagnostics = []
 
@@ -117,6 +118,13 @@ class Analyzer:
                         "kind": "instance" if constructed else "assignment",
                         "className": constructed,
                     })
+                    if scope.kind == "module":
+                        self.globals.setdefault((scope.path, name), {
+                            "key": f"{scope.path}::{name}",
+                            "path": scope.path,
+                            "name": name,
+                            "span": location(scope.path, self.files[scope.path], node),
+                        })
                 if (
                     isinstance(target, ast.Attribute)
                     and isinstance(target.value, ast.Name) and target.value.id == "self"
@@ -330,6 +338,7 @@ class Analyzer:
                 self.visit(statement, self.modules[path], None)
         return {
             "definitions": self.definitions,
+            "globals": list(self.globals.values()),
             "calls": self.calls,
             "diagnostics": self.diagnostics,
         }
