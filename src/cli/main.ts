@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { analyzeRepository } from "../indexer/analyze.js";
 import { discoverRepository } from "../indexer/discover.js";
 import { languageForPath, summarizeDiscovery } from "../indexer/inventory.js";
+import { startViewer } from "./view.js";
 
 const usage = [
   "Trace is a local code relationship explorer.",
@@ -11,9 +12,10 @@ const usage = [
   "  trace --help",
   "  trace scan [directory] [--json]",
   "  trace analyze [directory] [--json]",
+  "  trace view [directory]",
   "",
   "scan inventories files; analyze builds a source-backed call graph for supported languages.",
-  "The interactive graph viewer will be added in a later feature.",
+  "view serves a local browser graph explorer. Press Ctrl+C to stop it.",
 ].join("\n");
 
 export async function runCli(
@@ -27,7 +29,7 @@ export async function runCli(
   }
 
   const command = args[0];
-  if (command !== "scan" && command !== "analyze") {
+  if (command !== "scan" && command !== "analyze" && command !== "view") {
     writeError("Unknown command: " + args.join(" ") + "\nRun trace --help for usage.");
     return 2;
   }
@@ -35,8 +37,8 @@ export async function runCli(
   const options = args.slice(1);
   const json = options.includes("--json");
   const paths = options.filter((option) => option !== "--json");
-  if (paths.length > 1 || paths.some((path) => path.startsWith("-"))) {
-    writeError(`Usage: trace ${command} [directory] [--json]`);
+  if (paths.length > 1 || paths.some((path) => path.startsWith("-")) || (command === "view" && json)) {
+    writeError(command === "view" ? "Usage: trace view [directory]" : `Usage: trace ${command} [directory] [--json]`);
     return 2;
   }
 
@@ -45,6 +47,18 @@ export async function runCli(
   const interrupt = (): void => controller.abort();
   process.once("SIGINT", interrupt);
   try {
+    if (command === "view") {
+      const result = await analyzeRepository(directory, { signal: controller.signal });
+      const viewer = await startViewer(result);
+      writeOut("Graph viewer: " + viewer.url + "\nOpen this address in a browser. Press Ctrl+C to stop.");
+      await new Promise<void>((done) => {
+        if (controller.signal.aborted) done();
+        else controller.signal.addEventListener("abort", () => done(), { once: true });
+      });
+      await viewer.close();
+      return 0;
+    }
+
     if (command === "analyze") {
       const result = await analyzeRepository(directory, { signal: controller.signal });
       const { graph } = result;
@@ -111,10 +125,10 @@ export async function runCli(
     return 0;
   } catch (error) {
     if ((error as Error).name === "AbortError") {
-      writeError(command === "analyze" ? "Analysis cancelled." : "Scan cancelled.");
+      writeError(command === "scan" ? "Scan cancelled." : "Analysis cancelled.");
       return 130;
     }
-    writeError((command === "analyze" ? "Analysis failed: " : "Scan failed: ") + (error as Error).message);
+    writeError((command === "scan" ? "Scan failed: " : command === "view" ? "Viewer failed: " : "Analysis failed: ") + (error as Error).message);
     return 1;
   } finally {
     process.off("SIGINT", interrupt);
