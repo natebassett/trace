@@ -114,3 +114,59 @@ test("Python syntax errors, unsupported files, and cancellation are handled", as
     files: [{ path: "main.py", content: "def main(): pass" }],
   }, controller.signal), { name: "AbortError" });
 });
+
+test("Python class construction and assigned instance methods extend possible flow", async () => {
+  const result = await adapter.analyze({
+    repositoryId,
+    files: [
+      { path: "service.py", content: [
+        "class Worker:",
+        "    def __init__(self):",
+        "        self.helper = Helper()",
+        "    def start(self):",
+        "        self.helper.run()",
+        "class Helper:",
+        "    def __init__(self): pass",
+        "    def run(self): pass",
+      ].join("\n") },
+      { path: "main.py", content: [
+        "from service import Worker",
+        "def main():",
+        "    worker = Worker()",
+        "    worker.start()",
+        "def changed():",
+        "    worker = Worker()",
+        "    worker = unknown()",
+        "    worker.start()",
+      ].join("\n") },
+    ],
+  }, new AbortController().signal);
+  const symbols = result.nodes.filter((node) => node.kind === "symbol");
+  const calls = result.edges.map((edge) => ({
+    from: symbols.find((node) => node.id === edge.from)?.qualifiedName,
+    to: symbols.find((node) => node.id === edge.to)?.qualifiedName,
+    status: edge.status,
+  }));
+  assert.ok(calls.some((call) => call.from === "main" && call.to === "Worker.__init__" && call.status === "possible"));
+  assert.ok(calls.some((call) => call.from === "Worker.__init__" && call.to === "Helper.__init__" && call.status === "possible"));
+  assert.ok(calls.some((call) => call.from === "Worker.start" && call.to === "Helper.run" && call.status === "possible"));
+  assert.ok(calls.some((call) => call.from === "main" && call.to === "Worker.start" && call.status === "possible"));
+  assert.equal(calls.filter((call) => call.from === "changed" && call.to === "Worker.start").length, 0);
+});
+
+test("Python instance-field reassignment does not claim a method target", async () => {
+  const result = await adapter.analyze({
+    repositoryId,
+    files: [{ path: "main.py", content: [
+      "class Helper:",
+      "    def run(self): pass",
+      "class Worker:",
+      "    def __init__(self):",
+      "        self.helper = Helper()",
+      "        self.helper = unknown()",
+      "    def start(self): self.helper.run()",
+    ].join("\n") }],
+  }, new AbortController().signal);
+  const runCall = result.edges.find((edge) => edge.evidence.span.start.line === 7);
+  assert.equal(runCall?.status, "unresolved");
+});

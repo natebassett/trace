@@ -105,7 +105,7 @@ async function parsePython(files: readonly SourceFile[], signal: AbortSignal): P
 /** Python AST analysis; the scanned project is never imported or executed. */
 export class PythonAdapter implements LanguageAdapter {
   readonly id = "python";
-  readonly version = "1";
+  readonly version = "2";
   readonly languageIds = ["python"] as const;
 
   supports(path: string): boolean {
@@ -179,7 +179,7 @@ export class PythonAdapter implements LanguageAdapter {
         from, to, kind: "calls", status,
         evidence: {
           span: call.span, adapterId: this.id,
-          method: status === "resolved" ? "python-name" : status === "possible" ? "python-self-method" : "python-unresolved",
+          method: status === "resolved" ? "python-name" : status === "possible" ? "python-possible-call" : "python-unresolved",
         },
       });
     }

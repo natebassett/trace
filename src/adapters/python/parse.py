@@ -37,6 +37,7 @@ class Scope:
         self.global_names = set()
         self.nonlocal_names = set()
         self.dynamic_all = False
+        self.instance_fields = {}
 
     def bind(self, name, binding):
         self.bindings.setdefault(name, []).append(binding)
@@ -47,6 +48,7 @@ class Analyzer:
         self.files = {item["path"]: item["content"] for item in files}
         self.modules = {}
         self.scopes = {}
+        self.classes = {}
         self.definitions = []
         self.calls = []
         self.diagnostics = []
@@ -94,6 +96,8 @@ class Analyzer:
                 qualified, key,
             )
             self.scopes[id(node)] = child
+            if kind == "class":
+                self.classes[key] = child
             if kind != "class":
                 self.bind_parameters(node, child)
             for statement in node.body:
@@ -102,9 +106,25 @@ class Analyzer:
 
         if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            value = node.value if not isinstance(node, ast.AugAssign) else None
+            constructed = (
+                value.func.id if not conditional and isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name) else None
+            )
             for target in targets:
                 for name in self.targets(target):
-                    scope.bind(name, {"kind": "assignment"})
+                    scope.bind(name, {
+                        "kind": "instance" if constructed else "assignment",
+                        "className": constructed,
+                    })
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name) and target.value.id == "self"
+                    and scope.kind == "function" and scope.parent and scope.parent.kind == "class"
+                    and len(scope.bindings.get("self", [])) == 1
+                    and scope.bindings["self"][0]["kind"] == "parameter"
+                ):
+                    scope.parent.instance_fields.setdefault(target.attr, []).append(constructed)
         elif isinstance(node, (ast.For, ast.AsyncFor)):
             for name in self.targets(node.target):
                 scope.bind(name, {"kind": "assignment"})
@@ -159,8 +179,8 @@ class Analyzer:
             imported = self.modules.get(posixpath.normpath(path))
             if imported:
                 bindings = imported.bindings.get(binding["name"], [])
-                if len(bindings) == 1 and bindings[0]["kind"] == "function":
-                    return bindings[0]["key"]
+                if len(bindings) == 1 and bindings[0]["kind"] in ("function", "class"):
+                    return bindings[0]
         return None
 
     def name_target(self, scope, name):
@@ -175,8 +195,8 @@ class Analyzer:
                 if len(bindings) != 1:
                     return None
                 binding = bindings[0]
-                if binding["kind"] == "function":
-                    return binding["key"]
+                if binding["kind"] in ("function", "class"):
+                    return binding
                 if binding["kind"] == "import-from":
                     return self.imported_target(current, binding)
                 return None
@@ -185,18 +205,62 @@ class Analyzer:
                 current = current.parent
         return None
 
+    def constructor_target(self, binding):
+        class_scope = self.classes.get(binding["key"])
+        if class_scope:
+            initializers = class_scope.bindings.get("__init__", [])
+            if len(initializers) == 1 and initializers[0]["kind"] == "method":
+                return initializers[0]["key"]
+        return binding["key"]
+
+    def instance_binding(self, scope, name):
+        current = scope
+        while current:
+            if current.dynamic_all or name in current.global_names or name in current.nonlocal_names:
+                return None
+            bindings = current.bindings.get(name, [])
+            if bindings:
+                return bindings[0] if len(bindings) == 1 and bindings[0]["kind"] == "instance" else None
+            current = current.parent
+            if current and current.kind == "class":
+                current = current.parent
+        return None
+
+    def class_method_target(self, scope, class_name, method_name):
+        binding = self.name_target(scope, class_name)
+        if not binding or binding["kind"] != "class":
+            return None
+        class_scope = self.classes.get(binding["key"])
+        if not class_scope:
+            return None
+        methods = class_scope.bindings.get(method_name, [])
+        if len(methods) == 1 and methods[0]["kind"] == "method":
+            return methods[0]["key"]
+        return None
+
     def method_target(self, scope, expression):
-        if not isinstance(expression, ast.Attribute) or not isinstance(expression.value, ast.Name):
+        if not isinstance(expression, ast.Attribute):
             return None
-        if scope.kind != "function" or not scope.parent or scope.parent.kind != "class":
-            return None
-        method = scope.parent
-        parameters = scope.bindings.get(expression.value.id, [])
-        if expression.value.id not in ("self", "cls") or len(parameters) != 1 or parameters[0]["kind"] != "parameter":
-            return None
-        bindings = method.bindings.get(expression.attr, [])
-        if len(bindings) == 1 and bindings[0]["kind"] == "method":
-            return bindings[0]["key"]
+        if isinstance(expression.value, ast.Name):
+            owner = expression.value.id
+            if scope.kind == "function" and scope.parent and scope.parent.kind == "class":
+                parameters = scope.bindings.get(owner, [])
+                if owner in ("self", "cls") and len(parameters) == 1 and parameters[0]["kind"] == "parameter":
+                    bindings = scope.parent.bindings.get(expression.attr, [])
+                    if len(bindings) == 1 and bindings[0]["kind"] == "method":
+                        return bindings[0]["key"]
+            instance = self.instance_binding(scope, owner)
+            if instance:
+                return self.class_method_target(scope, instance["className"], expression.attr)
+        if (
+            isinstance(expression.value, ast.Attribute)
+            and isinstance(expression.value.value, ast.Name)
+            and expression.value.value.id == "self"
+            and scope.kind == "function" and scope.parent and scope.parent.kind == "class"
+        ):
+            fields = scope.parent.instance_fields.get(expression.value.attr, [])
+            if len(fields) == 1:
+                return self.class_method_target(scope, fields[0], expression.attr)
         return None
 
     def visit(self, node, scope, caller):
@@ -222,8 +286,16 @@ class Analyzer:
             return
         if isinstance(node, ast.Call):
             expression = ast.get_source_segment(self.files[scope.path], node.func) or "call"
-            target = self.name_target(scope, node.func.id) if isinstance(node.func, ast.Name) else None
-            status = "resolved" if target else "unresolved"
+            binding = self.name_target(scope, node.func.id) if isinstance(node.func, ast.Name) else None
+            if binding and binding["kind"] == "function":
+                target = binding["key"]
+                status = "resolved"
+            elif binding and binding["kind"] == "class":
+                target = self.constructor_target(binding)
+                status = "possible"
+            else:
+                target = None
+                status = "unresolved"
             if not target:
                 target = self.method_target(scope, node.func)
                 if target:
