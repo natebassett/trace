@@ -188,3 +188,24 @@ h1, h2, p { margin-top: 0; }
 }
 .file-card-navigate { display: block; margin-top: 8px; padding: 5px 0; border: 0; background: transparent; color: #6fe0ba; font-size: 10px; text-align: left; }
 .file-card-navigate:hover { text-decoration: underline; }
+.file-globals { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 9px; }
+.file-globals .eyebrow { width: 100%; font-size: 9px; }
+.file-global { padding: 3px 6px; border: 1px solid #3f596c; border-radius: 5px; background: #193341; color: #b7e9d8; font-family: Consolas, monospace; font-size: 10px; }
+.file-global:hover { border-color: #6fe0ba; }
+.flow-file-frame { fill: #0d2030; stroke: #3d5a6d; stroke-width: 2; }
+.flow-file-frame.start-file { stroke: #51cba7; }
+.flow-file-name { fill: #eaf6f5; font-size: 15px; font-weight: 750; }
+.flow-file-path { fill: #8eb1be; font-family: Consolas, monospace; font-size: 10px; }
+.flow-file-divider { stroke: #365367; stroke-width: 1; }
+.flow-global { fill: #8fe4bf; font-family: Consolas, monospace; font-size: 11px; cursor: pointer; }
+.flow-global:hover, .flow-global:focus { fill: #f6e9a5; outline: none; }
+.inline-code { width: 100%; height: 100%; margin: 0; padding: 10px; border: 1px solid #355165; border-radius: 6px; overflow: auto; background: #0a1722; color: #dcebf1; font-family: Consolas, monospace; font-size: 11px; line-height: 1.5; tab-size: 4; user-select: text; }
+.node-menu { position: fixed; z-index: 100; display: flex; flex-direction: column; min-width: 175px; padding: 5px; border: 1px solid #526c79; border-radius: 8px; background: #122838; box-shadow: 0 12px 35px #0009; }
+.node-menu[hidden] { display: none; }
+.node-menu button { padding: 9px 11px; border: 0; border-radius: 5px; background: transparent; color: #e6f4f2; text-align: left; font-size: 12px; }
+.node-menu button:hover, .node-menu button:focus-visible { background: #235045; outline: none; }
+
+.flow-expand-control { cursor: pointer; }
+.flow-expand-hit { fill: #173348; stroke: #496b78; }
+.flow-expand-control:hover .flow-expand-hit, .flow-expand-control:focus-visible .flow-expand-hit { fill: #235045; stroke: #66debb; }
+.flow-expand-control .graph-sub { fill: #bde9da; pointer-events: none; }

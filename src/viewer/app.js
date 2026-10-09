@@ -10,7 +10,7 @@ const elements = Object.fromEntries([
   "detail-title", "detail-description", "detail-explanation", "detail-actions",
   "connection-path", "connection-from", "connection-site", "connection-to",
   "edge-list", "source-panel", "source-location", "source-code", "vscode-link",
-  "expand-source", "code-dialog", "code-title", "code-location", "full-code", "close-code", "error",
+  "expand-source", "code-dialog", "code-title", "code-location", "full-code", "close-code", "node-menu", "error",
 ].map((id) => [id, document.getElementById(id)]));
 
 let root = "";
@@ -18,6 +18,7 @@ let graph;
 let files = [];
 let nodeById = new Map();
 let symbolsByFile = new Map();
+let globalsByFile = new Map();
 let focusId = null;
 let selectedFilePath = null;
 let mode = "flow";
@@ -26,6 +27,8 @@ let selectedEdge = null;
 let selectedEdgeId = null;
 let sourceRequest = 0;
 const sourceCache = new Map();
+const sourceTextByPath = new Map();
+const expandedNodeIds = new Set();
 
 function showError(message) {
   elements.error.textContent = message;
@@ -67,14 +70,19 @@ function renderSummary(payload) {
   files = payload.files ?? graph.nodes.filter((node) => node.kind === "module").map((node) => node.path);
   nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
   symbolsByFile = new Map();
+  globalsByFile = new Map();
   for (const node of graph.nodes) {
-    if (node.kind !== "symbol") continue;
-    const entries = symbolsByFile.get(node.location.path) ?? [];
+    const index = node.kind === "symbol" ? symbolsByFile
+      : node.kind === "state" && node.stateKind === "global" ? globalsByFile : null;
+    if (!index) continue;
+    const entries = index.get(node.location.path) ?? [];
     entries.push(node);
-    symbolsByFile.set(node.location.path, entries);
+    index.set(node.location.path, entries);
   }
-  for (const entries of symbolsByFile.values()) {
-    entries.sort((a, b) => a.location.start.line - b.location.start.line || nodeName(a).localeCompare(nodeName(b)));
+  for (const index of [symbolsByFile, globalsByFile]) {
+    for (const entries of index.values()) {
+      entries.sort((a, b) => a.location.start.line - b.location.start.line || nodeName(a).localeCompare(nodeName(b)));
+    }
   }
   elements.repository.textContent = root;
   elements.repository.title = root;
@@ -100,6 +108,10 @@ function renderSummary(payload) {
 
 function symbolsForFile(path) {
   return symbolsByFile.get(path) ?? [];
+}
+
+function globalsForFile(path) {
+  return globalsByFile.get(path) ?? [];
 }
 
 function renderFileList() {
@@ -307,6 +319,24 @@ function makeFileCard(path, relationships = [], primary = false) {
   const name = path.split("/").pop();
   heading.append(html("h3", "", name));
   heading.append(html("small", "", path));
+  const globals = globalsForFile(path);
+  if (globals.length > 0) {
+    const list = html("div", "file-globals");
+    list.append(html("span", "eyebrow", "GLOBALS"));
+    for (const node of globals) {
+      const button = html("button", "file-global", nodeName(node));
+      button.type = "button";
+      button.title = path + ":" + node.location.start.line;
+      button.addEventListener("click", () => inspectNode(node.id));
+      button.addEventListener("dblclick", () => openFullCode(node));
+      button.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        openNodeMenu(node, event.clientX, event.clientY);
+      });
+      list.append(button);
+    }
+    heading.append(list);
+  }
   if (!primary) {
     const navigate = html("button", "file-card-navigate", "Focus this file →");
     navigate.type = "button";
@@ -321,6 +351,7 @@ function makeFileCard(path, relationships = [], primary = false) {
   for (const node of symbols) {
     const button = html("button", "file-function" + (node.id === selectedNodeId ? " active" : ""));
     button.type = "button";
+    button.dataset.nodeId = node.id;
     button.append(html("strong", "", nodeName(node)));
     button.append(html("small", "", node.symbolKind + " · line " + node.location.start.line));
     button.addEventListener("click", () => inspectNode(node.id));
@@ -396,6 +427,201 @@ function renderFileMap() {
   elements["edge-list"].replaceChildren();
 }
 
+const flowFileWidth = 420;
+const flowNodeWidth = 382;
+const flowNodeCollapsedHeight = 64;
+const flowNodeExpandedHeight = 330;
+const flowNodeGap = 12;
+const flowColumnGap = 75;
+
+function nodeSourceLine(node) {
+  const content = sourceTextByPath.get(fileForNode(node));
+  if (!content || !node.location) return "";
+  return sourceLines(content)[node.location.start.line - 1]?.trim() ?? "";
+}
+
+function openNodeMenu(node, clientX, clientY) {
+  const menu = elements["node-menu"];
+  menu.replaceChildren();
+  function action(label, callback) {
+    const button = html("button", "", label);
+    button.type = "button";
+    button.addEventListener("click", () => {
+      menu.hidden = true;
+      callback();
+    });
+    menu.append(button);
+  }
+  if (node.kind === "symbol" || node.kind === "module") {
+    action(expandedNodeIds.has(node.id) ? "Collapse code" : "Expand code", () => toggleInlineCode(node));
+    action("Open full source", () => openFullCode(node));
+    action("Trace from here", () => {
+      mode = "flow";
+      updateModeControls();
+      selectFocus(node.id);
+    });
+  } else {
+    action("Inspect", () => inspectNode(node.id));
+  }
+  menu.hidden = false;
+  menu.style.left = Math.max(8, Math.min(clientX, innerWidth - 200)) + "px";
+  menu.style.top = Math.max(8, Math.min(clientY, innerHeight - 130)) + "px";
+}
+
+function toggleInlineCode(node) {
+  if (node.kind !== "symbol" && node.kind !== "module") return;
+  elements["node-menu"].hidden = true;
+  if (expandedNodeIds.has(node.id)) {
+    expandedNodeIds.delete(node.id);
+  } else {
+    expandedNodeIds.add(node.id);
+    const path = fileForNode(node);
+    if (!sourceTextByPath.has(path)) {
+      void loadSource(path).then(() => {
+        if (expandedNodeIds.has(node.id) && mode === "flow") renderGraph();
+      }).catch((error) => showError(error.message));
+    }
+  }
+  renderGraph();
+}
+
+function drawFlowNode(node, position, isStart) {
+  const expanded = expandedNodeIds.has(node.id);
+  const height = expanded ? flowNodeExpandedHeight : flowNodeCollapsedHeight;
+  const group = svg("g", {
+    class: "node-group",
+    tabindex: "0",
+    role: "button",
+    "data-node-id": node.id,
+    "aria-label": (expanded ? "Collapse " : "Inspect ") + nodeName(node) + "; double-click to " + (expanded ? "collapse" : "expand") + " code",
+  });
+  group.append(svg("rect", {
+    x: position.x, y: position.y, width: flowNodeWidth, height, rx: 9,
+    class: "node-card" + (isStart ? " focus" : "") + (node.id === selectedNodeId && !isStart ? " selected" : ""),
+  }));
+  const heading = svg("text", { x: position.x + 13, y: position.y + 23, class: "graph-label" });
+  heading.textContent = node.kind === "module" ? "File entry" : short(nodeName(node), 45);
+  group.append(heading);
+  const expandControl = svg("g", {
+    class: "flow-expand-control",
+    tabindex: "0",
+    role: "button",
+    "aria-label": (expanded ? "Collapse" : "Expand") + " full code for " + nodeName(node),
+  });
+  expandControl.append(svg("rect", {
+    x: position.x + flowNodeWidth - 111, y: position.y + 5,
+    width: 104, height: 28, rx: 5, class: "flow-expand-hit",
+  }));
+  const hint = svg("text", { x: position.x + flowNodeWidth - 13, y: position.y + 22, "text-anchor": "end", class: "graph-sub" });
+  hint.textContent = expanded ? "− collapse code" : "+ expand code";
+  expandControl.append(hint);
+  expandControl.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleInlineCode(node);
+  });
+  expandControl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleInlineCode(node);
+    }
+  });
+  group.append(expandControl);
+  const sub = svg("text", { x: position.x + 13, y: position.y + 44, class: "graph-sub" });
+  sub.textContent = short(node.kind === "module" ? "Top-level statements" : nodeSourceLine(node) || (node.symbolKind ?? node.boundaryKind ?? "call") + " · line " + (node.location?.start.line ?? 1), 58);
+  group.append(sub);
+  if (expanded) {
+    const foreign = svg("foreignObject", {
+      x: position.x + 9, y: position.y + 57,
+      width: flowNodeWidth - 18, height: height - 66,
+    });
+    const pre = document.createElementNS("http://www.w3.org/1999/xhtml", "pre");
+    pre.setAttribute("class", "inline-code");
+    const content = sourceTextByPath.get(fileForNode(node));
+    if (content) {
+      const lines = sourceLines(content);
+      const range = nodeRange(node, lines.length);
+      pre.textContent = formatLines(lines, range.start, range.end);
+    } else {
+      pre.textContent = "Loading full source…";
+    }
+    pre.addEventListener("click", (event) => event.stopPropagation());
+    pre.addEventListener("dblclick", (event) => event.stopPropagation());
+    foreign.append(pre);
+    group.append(foreign);
+  }
+  group.addEventListener("click", (event) => {
+    if (event.detail >= 2) {
+      event.preventDefault();
+      toggleInlineCode(node);
+    } else {
+      inspectNode(node.id);
+    }
+  });
+  group.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    openNodeMenu(node, event.clientX, event.clientY);
+  });
+  group.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      inspectNode(node.id);
+    } else if (event.key.toLowerCase() === "e") {
+      event.preventDefault();
+      toggleInlineCode(node);
+    } else if (event.key === "F10" && event.shiftKey) {
+      event.preventDefault();
+      const rect = group.getBoundingClientRect();
+      openNodeMenu(node, rect.left + 24, rect.top + 24);
+    }
+  });
+  return group;
+}
+
+function drawFlowConnection(link, from, to) {
+  const sameFile = from.path === to.path;
+  const forward = to.x > from.x;
+  let d;
+  if (sameFile) {
+    const side = from.x + flowNodeWidth + 28;
+    d = "M " + (from.x + flowNodeWidth) + " " + (from.y + 30)
+      + " C " + side + " " + (from.y + 30) + ", " + side + " " + (to.y + 30)
+      + ", " + (to.x + flowNodeWidth) + " " + (to.y + 30);
+  } else if (forward) {
+    const x1 = from.x + flowNodeWidth;
+    const x2 = to.x;
+    const bend = (x1 + x2) / 2;
+    d = "M " + x1 + " " + (from.y + 30) + " C " + bend + " " + (from.y + 30)
+      + ", " + bend + " " + (to.y + 30) + ", " + x2 + " " + (to.y + 30);
+  } else {
+    const x1 = from.x + flowNodeWidth;
+    const x2 = to.x + flowNodeWidth;
+    const bend = Math.max(x1, x2) + 32;
+    d = "M " + x1 + " " + (from.y + 30) + " C " + bend + " " + (from.y + 30)
+      + ", " + bend + " " + (to.y + 30) + ", " + x2 + " " + (to.y + 30);
+  }
+  const edge = link.calls[0];
+  const line = svg("path", {
+    d,
+    class: "edge-line " + link.status + (forward || sameFile ? "" : " cycle"),
+    tabindex: "0",
+    role: "button",
+    "aria-label": "Inspect " + nodeName(link.from) + " to " + nodeName(link.to) + " call",
+  });
+  const title = svg("title");
+  title.textContent = statusName(edge) + " · " + edge.evidence.span.path + ":" + edge.evidence.span.start.line
+    + (link.calls.length > 1 ? " · " + link.calls.length + " call sites" : "");
+  line.append(title);
+  line.addEventListener("click", () => selectEdge(edge));
+  line.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectEdge(edge);
+    }
+  });
+  return line;
+}
+
 function renderFlow() {
   const flow = getCallFlow(graph, focusId, {
     depth: Number(elements["flow-depth"].value),
@@ -403,55 +629,128 @@ function renderFlow() {
     maxLinks: 60,
     includeUnresolved: elements["show-unresolved"].checked,
   });
-  const rows = Math.max(1, ...flow.levels.map((level) => level.length));
-  const width = Math.max(820, flow.levels.length * 245 + 110);
-  const height = Math.max(620, rows * 66 + 120);
+  const groups = new Map();
+  flow.levels.forEach((level, depth) => {
+    for (const node of level) {
+      const path = fileForNode(node);
+      const group = groups.get(path) ?? { path, depth, nodes: [] };
+      group.depth = Math.min(group.depth, depth);
+      group.nodes.push({ node, depth });
+      groups.set(path, group);
+    }
+  });
+  const columns = new Map();
+  for (const group of groups.values()) {
+    group.nodes.sort((a, b) => a.depth - b.depth
+      || (a.node.location?.start.line ?? 0) - (b.node.location?.start.line ?? 0)
+      || nodeName(a.node).localeCompare(nodeName(b.node)));
+    const entries = columns.get(group.depth) ?? [];
+    entries.push(group);
+    columns.set(group.depth, entries);
+  }
+  const orderedColumns = [...columns.entries()].sort((a, b) => a[0] - b[0]);
+  const positions = new Map();
+  let maxBottom = 0;
+  orderedColumns.forEach(([depth, entries], columnIndex) => {
+    entries.sort((a, b) => a.path.localeCompare(b.path));
+    const x = 50 + columnIndex * (flowFileWidth + flowColumnGap);
+    let y = 80;
+    for (const group of entries) {
+      const globals = globalsForFile(group.path);
+      const headerHeight = 63 + globals.length * 17;
+      let nodeY = y + headerHeight + 10;
+      for (const { node } of group.nodes) {
+        positions.set(node.id, { x: x + 18, y: nodeY, path: group.path });
+        nodeY += (expandedNodeIds.has(node.id) ? flowNodeExpandedHeight : flowNodeCollapsedHeight) + flowNodeGap;
+      }
+      group.layout = { x, y, width: flowFileWidth, height: nodeY - y + 8, headerHeight };
+      y += group.layout.height + 28;
+    }
+    maxBottom = Math.max(maxBottom, y);
+  });
+  const width = Math.max(830, orderedColumns.length * (flowFileWidth + flowColumnGap) + 70);
+  const height = Math.max(620, maxBottom + 20);
   elements["focus-heading"].textContent = "Flow from " + nodeName(flow.start);
   elements["graph-empty"].hidden = true;
-  elements["legend-note"].textContent = "Green marks the chosen start point.";
+  elements["legend-note"].textContent = "Files group their functions. Double-click a function to expand its code; right-click for actions.";
   elements.graph.classList.add("flow");
   elements.graph.parentElement.classList.add("flow");
   elements.graph.setAttribute("viewBox", "0 0 " + width + " " + height);
   elements.graph.style.width = width + "px";
   elements.graph.style.height = height + "px";
   elements.graph.replaceChildren();
-  const positions = new Map();
-  flow.levels.forEach((level, depth) => {
-    const x = 55 + depth * 245;
-    const heading = svg("text", { x, y: 39, class: "graph-column-label" + (depth === 0 ? " start-caption" : "") });
-    heading.textContent = depth === 0 ? "START" : "STEP " + depth;
-    elements.graph.append(heading);
-    const top = Math.max(75, (height - level.length * 66) / 2);
-    level.forEach((node, index) => positions.set(node.id, { x, y: top + index * 66, depth }));
+  orderedColumns.forEach(([depth, entries]) => {
+    const x = entries[0].layout.x;
+    const label = svg("text", { x, y: 42, class: "graph-column-label" + (depth === 0 ? " start-caption" : "") });
+    label.textContent = depth === 0 ? "START FILE" : "REACHED AT STEP " + depth;
+    elements.graph.append(label);
+    for (const group of entries) {
+      const { x: boxX, y: boxY, width: boxWidth, height: boxHeight, headerHeight } = group.layout;
+      const frame = svg("g", { class: "flow-file-box" });
+      frame.append(svg("rect", {
+        x: boxX, y: boxY, width: boxWidth, height: boxHeight, rx: 13,
+        class: "flow-file-frame" + (group.path === fileForNode(flow.start) ? " start-file" : ""),
+      }));
+      const name = svg("text", { x: boxX + 16, y: boxY + 24, class: "flow-file-name" });
+      name.textContent = short(group.path.split("/").pop(), 48);
+      frame.append(name);
+      const pathLabel = svg("text", { x: boxX + 16, y: boxY + 41, class: "flow-file-path" });
+      pathLabel.textContent = short(group.path, 62);
+      frame.append(pathLabel);
+      globalsForFile(group.path).forEach((global, index) => {
+        const label = svg("text", {
+          x: boxX + 16, y: boxY + 60 + index * 17,
+          class: "flow-global", tabindex: "0", role: "button",
+          "aria-label": "Inspect global " + global.label,
+        });
+        label.textContent = "global " + short(global.label, 45);
+        label.addEventListener("click", () => inspectNode(global.id));
+        label.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            inspectNode(global.id);
+          }
+        });
+        frame.append(label);
+      });
+      frame.append(svg("line", {
+        x1: boxX + 1, y1: boxY + headerHeight,
+        x2: boxX + boxWidth - 1, y2: boxY + headerHeight,
+        class: "flow-file-divider",
+      }));
+      elements.graph.append(frame);
+      if (!sourceTextByPath.has(group.path) && !sourceCache.has(group.path)) {
+        void loadSource(group.path).then(() => {
+          if (mode === "flow" && focusId === flow.start.id) renderGraph();
+        }).catch(() => { /* The inspector shows unavailable source when selected. */ });
+      }
+    }
   });
   for (const link of flow.links) {
     const from = positions.get(link.from.id);
     const to = positions.get(link.to.id);
-    const backwards = to.depth <= from.depth;
-    elements.graph.append(drawEdge(
-      link.calls[0],
-      backwards ? from.x : from.x + 190,
-      from.y + 24,
-      backwards ? to.x + 190 : to.x,
-      to.y + 24,
-      backwards ? "cycle" : "",
-    ));
+    if (!from || !to) continue;
+    elements.graph.append(drawFlowConnection(link, from, to));
     if (link.calls.length > 1) {
-      const count = svg("text", { x: (from.x + to.x + 190) / 2, y: (from.y + to.y) / 2 + 18, class: "flow-count" });
+      const count = svg("text", {
+        x: (from.x + to.x + flowNodeWidth) / 2,
+        y: (from.y + to.y) / 2 + 27,
+        class: "flow-count",
+      });
       count.textContent = "×" + link.calls.length;
       elements.graph.append(count);
     }
   }
-  for (const level of flow.levels) {
-    for (const node of level) {
+  for (const [path, group] of groups) {
+    for (const { node } of group.nodes) {
       const position = positions.get(node.id);
-      elements.graph.append(drawNode(node, position.x, position.y, 190, 48, node.id === flow.start.id));
+      elements.graph.append(drawFlowNode(node, position, node.id === flow.start.id));
     }
   }
   const nodeCount = flow.levels.reduce((total, level) => total + level.length, 0);
   elements["detail-title"].textContent = "Start: " + nodeName(flow.start);
-  elements["detail-description"].textContent = nodeCount + " nodes · " + flow.links.length + " connections · " + flow.levels.length + " levels"
-    + (flow.omittedNodes || flow.omittedLinks ? " · some hidden by view limits" : "");
+  elements["detail-description"].textContent = groups.size + " files · " + nodeCount + " nodes · "
+    + flow.links.length + " connections" + (flow.omittedNodes || flow.omittedLinks ? " · some hidden by view limits" : "");
   renderFlowEdgeList(flow);
 }
 
@@ -555,7 +854,20 @@ function inspectNode(id) {
   selectedNodeId = id;
   selectedEdge = null;
   selectedEdgeId = null;
-  renderGraph();
+  if (mode === "flow" || mode === "files") {
+    for (const group of elements.graph.querySelectorAll(".node-group")) {
+      const card = group.querySelector(".node-card");
+      if (card && !card.classList.contains("focus")) {
+        card.classList.toggle("selected", group.getAttribute("data-node-id") === id);
+      }
+    }
+    for (const button of elements["file-map"].querySelectorAll(".file-function")) {
+      button.classList.toggle("active", button.dataset.nodeId === id);
+    }
+    renderInspector();
+  } else {
+    renderGraph();
+  }
 }
 
 function selectEdge(edge) {
@@ -596,7 +908,9 @@ async function loadSource(path) {
   if (!sourceCache.has(path)) {
     const promise = fetch("/api/source?path=" + encodeURIComponent(path)).then(async (response) => {
       if (!response.ok) throw new Error("Source is no longer available (" + response.status + ")");
-      return (await response.json()).content;
+      const content = (await response.json()).content;
+      sourceTextByPath.set(path, content);
+      return content;
     });
     sourceCache.set(path, promise);
   }
@@ -610,7 +924,7 @@ async function loadSource(path) {
 
 async function openFullCode(node) {
   const path = node && fileForNode(node);
-  if (!path || (node.kind !== "symbol" && node.kind !== "module")) return;
+  if (!path || (node.kind !== "symbol" && node.kind !== "module" && node.kind !== "state")) return;
   elements["code-title"].textContent = nodeName(node);
   elements["code-location"].textContent = path;
   elements["full-code"].textContent = "Loading source…";
@@ -633,7 +947,8 @@ async function renderSourcePreview(path, line, column, request, fullNode = null)
   elements["source-code"].textContent = "Loading source…";
   setSourceLink(path, line, column);
   elements["expand-source"].hidden = !fullNode;
-  elements["expand-source"].textContent = fullNode?.kind === "module" ? "Expand full file" : "Expand full function";
+  elements["expand-source"].textContent = fullNode?.kind === "module" ? "Expand full file"
+    : fullNode?.kind === "state" ? "Expand declaration" : "Expand full function";
   elements["expand-source"].onclick = fullNode ? () => openFullCode(fullNode) : null;
   try {
     const content = await loadSource(path);
@@ -696,10 +1011,12 @@ function renderInspector() {
   elements["detail-description"].textContent = path + (node.location ? ":" + line : " · file");
   const incoming = visibleCalls().filter((edge) => edge.to === node.id).length;
   const outgoing = visibleCalls().filter((edge) => edge.from === node.id).length;
-  elements["detail-explanation"].textContent = outgoing + " calls from this node · " + incoming
-    + " calls into it. Expand the source to read the complete " + (node.kind === "module" ? "file." : "definition.");
+  elements["detail-explanation"].textContent = node.kind === "state"
+    ? "Module-level global in this file. Expand its declaration to inspect the source."
+    : outgoing + " calls from this node · " + incoming + " calls into it. Expand the source to read the complete "
+      + (node.kind === "module" ? "file." : "definition.");
   elements["detail-explanation"].hidden = false;
-  if (node.id !== focusId || mode === "files") {
+  if (node.kind !== "state" && (node.id !== focusId || mode === "files")) {
     addDetailAction("Trace from here", () => {
       mode = "flow";
       updateModeControls();
@@ -707,7 +1024,7 @@ function renderInspector() {
     });
     elements["detail-actions"].hidden = false;
   }
-  if (path && (node.kind === "symbol" || node.kind === "module")) {
+  if (path && (node.kind === "symbol" || node.kind === "module" || node.kind === "state")) {
     void renderSourcePreview(path, line, node.location?.start.column ?? 1, request, node);
   }
 }
@@ -721,6 +1038,12 @@ async function main() {
   elements["direct-mode"].addEventListener("click", () => setMode("nearby"));
   elements["file-mode"].addEventListener("click", () => setMode("files"));
   elements["close-code"].addEventListener("click", () => elements["code-dialog"].close());
+  document.addEventListener("click", (event) => {
+    if (!elements["node-menu"].contains(event.target)) elements["node-menu"].hidden = true;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") elements["node-menu"].hidden = true;
+  });
   elements["flow-depth"].addEventListener("change", renderGraph);
   elements["show-unresolved"].addEventListener("change", () => {
     selectedEdge = null;
