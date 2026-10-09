@@ -33,7 +33,7 @@ test("scan reports languages and provides a complete JSON inventory", async () =
     assert.equal(human.status, 0, human.stderr);
     assert.match(human.stdout, /TypeScript 1/);
     assert.match(human.stdout, /main.ts \(TypeScript\)/);
-    assert.match(human.stdout, /File inventory only/);
+    assert.match(human.stdout, /Scan inventories files/);
 
     const json = spawnSync(process.execPath, [cliPath, "scan", root, "--json"], { encoding: "utf8" });
     assert.equal(json.status, 0, json.stderr);
@@ -56,4 +56,52 @@ test("scan reports an invalid directory without a stack trace", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Scan failed:/);
   assert.equal(result.stdout, "");
+});
+
+test("analyze exposes a validated JavaScript/TypeScript graph through the CLI", async () => {
+  const root = await mkdtemp(join(tmpdir(), "trace-analyze-"));
+  try {
+    await writeFile(join(root, "helpers.ts"), "export function load() {}\n");
+    await writeFile(join(root, "main.ts"), [
+      'import { load } from "./helpers.js";',
+      "export function start(callback: () => void) { load(); callback(); }",
+    ].join("\n"));
+
+    const result = spawnSync(process.execPath, [cliPath, "analyze", root, "--json"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout) as {
+      summary: { analyzedFiles: number; calls: { resolved: number; unresolved: number } };
+      graph: { nodes: Array<{ kind: string; label: string }>; edges: Array<{ status: string; evidence: { span: { path: string } } }> };
+    };
+    assert.equal(parsed.summary.analyzedFiles, 2);
+    assert.deepEqual(parsed.summary.calls, { resolved: 1, possible: 0, unresolved: 1 });
+    assert.ok(parsed.graph.nodes.some((node) => node.kind === "symbol" && node.label === "start"));
+    assert.deepEqual(parsed.graph.edges.map((edge) => edge.evidence.span.path), ["main.ts", "main.ts"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("analyze runs Python source through the CLI", async () => {
+  const root = await mkdtemp(join(tmpdir(), "trace-python-cli-"));
+  try {
+    await writeFile(join(root, "helpers.py"), "def load():\n    pass\n");
+    await writeFile(join(root, "main.py"), [
+      "from helpers import load",
+      "def start(callback):",
+      "    load()",
+      "    callback()",
+    ].join("\n"));
+    const result = spawnSync(process.execPath, [cliPath, "analyze", root, "--json"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout) as {
+      summary: { analyzedFiles: number; calls: { resolved: number; possible: number; unresolved: number } };
+      graph: { nodes: Array<{ kind: string; languageId?: string }> };
+    };
+    assert.equal(parsed.summary.analyzedFiles, 2);
+    assert.deepEqual(parsed.summary.calls, { resolved: 1, possible: 0, unresolved: 1 });
+    assert.ok(parsed.graph.nodes.some((node) => node.kind === "module" && node.languageId === "python"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
