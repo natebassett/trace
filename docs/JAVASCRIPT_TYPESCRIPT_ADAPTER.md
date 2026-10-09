@@ -1,0 +1,9 @@
+# JavaScript and TypeScript adapter
+
+`JavaScriptTypeScriptAdapter` implements the shared `LanguageAdapter` contract for `.ts`, `.tsx`, `.js`, and `.jsx` files. It receives repository-relative paths and file contents from its caller. It parses those contents in memory with the TypeScript compiler API and does not run project code or read imported files from disk.
+
+The first version emits a module node for each supported file and a symbol node for each named function declaration with a body. It records calls made at module level or inside those functions. A direct identifier call is `resolved` when TypeScript's symbol lookup identifies one supplied function declaration and the binding is not reassigned. Relative imports, including a `.js` specifier pointing to a supplied `.ts` file, can resolve across files. Every call edge has a source span and a deterministic ID.
+
+Other calls end at an `unresolved` boundary with a diagnostic. This includes calls through parameters, variables, object properties, external imports, reassigned names, and ambiguous declarations. Calls inside arrow functions, function expressions, and methods are outside this first version's caller model, so they are not emitted. A file with a syntax error gets a diagnostic and a module node, but its recovered syntax tree is not used as certain graph evidence.
+
+The adapter returns nodes, edges, and diagnostics. Its caller supplies the repository node and validates the assembled `GraphSnapshot` with `validateGraph`. The integration test uses the branching fixture to verify two resolved calls, one unresolved call, and the exact source text behind each edge. The current `trace scan` command remains a file inventory; running the adapter over discovered files and exposing the graph through the CLI is the next integration step.
