@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { lstat, readdir, realpath } from "node:fs/promises";
-import { basename, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -51,8 +51,10 @@ function toPortablePath(path: string): string {
   return path.split(sep).join("/");
 }
 
-function excludedPath(path: string): boolean {
-  return path.split("/").some((part) => excludedDirectoryNames.has(part));
+function excludedPath(path: string, isDirectory = false): boolean {
+  const parts = path.split("/");
+  if (!isDirectory) parts.pop();
+  return parts.some((part) => excludedDirectoryNames.has(part));
 }
 
 function withinRoot(root: string, path: string): boolean {
@@ -71,7 +73,7 @@ async function gitPaths(
     maxBuffer: 32 * 1024 * 1024,
     ...(signal ? { signal } : {}),
   });
-  return stdout.split("\0").filter((path) => path.length > 0).map((path) => path.replaceAll("\\", "/"));
+  return stdout.split("\0").filter((path) => path.length > 0);
 }
 
 async function canUseGit(root: string, signal: AbortSignal | undefined): Promise<boolean> {
@@ -154,7 +156,7 @@ export async function discoverRepository(
     for (const path of [...new Set(ignored)].sort()) {
       checkAbort(options.signal);
       if (!withinRoot(root, path)) continue;
-      skip(path, excludedPath(path) ? "generated-directory" : "gitignored");
+      skip(path, excludedPath(path, path.endsWith("/")) ? "generated-directory" : "gitignored");
     }
   } else {
     diagnostics.push("Git ignore rules were unavailable; only built-in generated-folder exclusions were applied.");
@@ -165,7 +167,7 @@ export async function discoverRepository(
         checkAbort(options.signal);
         const absolutePath = resolve(directoryPath, entry.name);
         const path = toPortablePath(relative(root, absolutePath));
-        if (excludedPath(path)) {
+        if (excludedPath(path, entry.isDirectory())) {
           skip(path, "generated-directory");
         } else if (entry.isSymbolicLink()) {
           skip(path, "symlink");

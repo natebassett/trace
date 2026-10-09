@@ -20,6 +20,7 @@ test("Git discovery respects ignore rules and excludes generated folders", async
     execFileSync("git", ["init", "-q"], { cwd: root });
     await writeFile(join(root, ".gitignore"), "ignored.js\n");
     await writeFile(join(root, "main.ts"), "export const x = 1;\n");
+    await writeFile(join(root, "build"), "ordinary file\n");
     await writeFile(join(root, "ignored.js"), "ignored\n");
     await mkdir(join(root, "dist"));
     await writeFile(join(root, "dist", "output.js"), "output\n");
@@ -32,7 +33,7 @@ test("Git discovery respects ignore rules and excludes generated folders", async
     });
 
     assert.equal(result.gitIgnoreApplied, true);
-    assert.deepEqual(result.files.map((file) => file.path), [".gitignore", "main.ts", "src/module.tsx"]);
+    assert.deepEqual(result.files.map((file) => file.path), [".gitignore", "build", "main.ts", "src/module.tsx"]);
     assert.ok(result.skipped.some((entry) => entry.path === "ignored.js" && entry.reason === "gitignored"));
     assert.ok(result.skipped.some((entry) => entry.path.startsWith("dist/") && entry.reason === "generated-directory"));
     assert.ok(progress.length > 0);
@@ -43,10 +44,11 @@ test("Git discovery respects ignore rules and excludes generated folders", async
 test("plain directory discovery warns that Git ignore rules are unavailable", async () => {
   await withDirectory(async (root) => {
     await writeFile(join(root, "main.py"), "pass\n");
+    await writeFile(join(root, "build"), "ordinary file\n");
     await mkdir(join(root, "node_modules"));
     await writeFile(join(root, "node_modules", "dependency.js"), "ignored\n");
     const result = await discoverRepository(root);
-    assert.deepEqual(result.files.map((file) => file.path), ["main.py"]);
+    assert.deepEqual(result.files.map((file) => file.path), ["build", "main.py"]);
     assert.equal(result.gitIgnoreApplied, false);
     assert.match(result.diagnostics[0] ?? "", /Git ignore rules were unavailable/);
     assert.ok(result.skipped.some((entry) => entry.path === "node_modules"));
