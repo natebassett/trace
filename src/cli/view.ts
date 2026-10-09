@@ -48,6 +48,7 @@ export async function startViewer(result: AnalysisResult): Promise<ViewerHandle>
     root: result.discovery.root,
     analyzedFiles: result.analyzedFiles,
     unsupportedFiles: result.unsupportedFiles,
+    files: result.discovery.files.map((file) => file.path),
     graph: result.graph,
   });
   const allowedSourcePaths = new Set(result.graph.nodes

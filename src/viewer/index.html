@@ -18,13 +18,16 @@
     <aside class="sidebar" aria-label="Symbols">
       <div class="sidebar-heading">
         <span class="eyebrow">EXPLORE</span>
-        <h1>Find a symbol</h1>
-        <p>Choose a start point to see how functions connect.</p>
+        <h1>Explore files</h1>
+        <p>Open a file to see its functions and connections.</p>
       </div>
-      <label class="search-label" for="search">Search symbols or file paths</label>
+      <label class="search-label" for="search">Search files or functions</label>
       <input id="search" class="search" type="search" placeholder="e.g. __post_init__" autocomplete="off" autofocus>
       <div id="search-count" class="search-count"></div>
       <div id="suggestions-wrap" class="suggestions"><span class="eyebrow">SUGGESTED STARTS</span><div id="suggestions" class="suggestion-list"></div></div>
+      <div class="file-list-heading"><span class="eyebrow">FILES</span><span id="file-count"></span></div>
+      <div id="files-list" class="files-list"></div>
+      <div class="symbol-list-heading"><span class="eyebrow">FUNCTIONS &amp; SYMBOLS</span></div>
       <div id="results" class="results"></div>
     </aside>
     <section class="stage" aria-label="Call graph">
@@ -34,6 +37,7 @@
           <div class="mode-switch" role="group" aria-label="Graph view">
             <button id="flow-mode" class="mode active" type="button">Flow from start</button>
             <button id="direct-mode" class="mode" type="button">Nearby calls</button>
+            <button id="file-mode" class="mode" type="button">File map</button>
           </div>
           <label id="depth-control" class="depth-control" for="flow-depth">Depth
             <select id="flow-depth"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select>
@@ -43,7 +47,8 @@
       </div>
       <div class="graph-wrap">
         <svg id="graph" role="img" aria-label="Function call graph from the selected start point" viewBox="0 0 1000 650"></svg>
-        <div id="graph-empty" class="graph-empty">Choose a symbol from the left to explore its calls.</div>
+        <div id="file-map" class="file-map" hidden></div>
+        <div id="graph-empty" class="graph-empty">Choose a symbol or file from the left to explore its calls.</div>
       </div>
       <div class="legend">
         <span><i class="dot resolved"></i> Resolved</span>
@@ -53,16 +58,33 @@
       </div>
     </section>
     <aside class="details" aria-label="Source evidence">
-      <span class="eyebrow">SOURCE EVIDENCE</span>
+      <span class="eyebrow">SOURCE &amp; CONNECTIONS</span>
       <h2 id="detail-title">Select a call</h2>
-      <p id="detail-description" class="muted">Click a connection to inspect where it appears in the source.</p>
-      <div id="edge-list" class="edge-list"></div>
+      <p id="detail-description" class="muted">Click a function or connection to inspect its source.</p>
+      <p id="detail-explanation" class="detail-explanation" hidden></p>
+      <div id="connection-path" class="connection-path" hidden>
+        <div><span>FROM</span><strong id="connection-from"></strong></div>
+        <div><span>CALL SITE</span><strong id="connection-site"></strong></div>
+        <div><span>TO</span><strong id="connection-to"></strong></div>
+      </div>
+      <div id="detail-actions" class="detail-actions" hidden></div>
       <div id="source-panel" class="source-panel" hidden>
-        <div class="source-heading"><span id="source-location"></span><a id="vscode-link" target="_blank" rel="noopener noreferrer">Open in VS Code ↗</a></div>
+        <div class="source-heading">
+          <span id="source-location"></span>
+          <div class="source-links"><button id="expand-source" type="button" hidden>Expand full code</button><a id="vscode-link" target="_blank" rel="noopener noreferrer">Open in VS Code ↗</a></div>
+        </div>
         <pre id="source-code"></pre>
       </div>
+      <div id="edge-list" class="edge-list"></div>
     </aside>
   </main>
+  <dialog id="code-dialog" aria-labelledby="code-title">
+    <div class="code-dialog-heading">
+      <div><span class="eyebrow">FULL SOURCE</span><h2 id="code-title"></h2><p id="code-location" class="muted"></p></div>
+      <button id="close-code" type="button" aria-label="Close full source">Close ×</button>
+    </div>
+    <pre id="full-code"></pre>
+  </dialog>
   <div id="error" class="error" hidden></div>
 </body>
 </html>

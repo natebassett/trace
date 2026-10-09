@@ -9,6 +9,7 @@ import { analyzeRepository } from "../../src/indexer/analyze.js";
 test("local viewer serves the graph, assets, and only analyzed source", async () => {
   const root = await mkdtemp(join(tmpdir(), "trace-viewer-"));
   await writeFile(join(root, "main.ts"), "export function start() { helper(); }\nfunction helper() {}\n");
+  await writeFile(join(root, "README.md"), "# Example\n");
   const result = await analyzeRepository(root);
   const viewer = await startViewer(result);
   try {
@@ -25,14 +26,18 @@ test("local viewer serves the graph, assets, and only analyzed source", async ()
     assert.equal(graphResponse.status, 200);
     const payload = await graphResponse.json() as {
       analyzedFiles: number;
+      files: string[];
       graph: { edges: Array<{ status: string }> };
     };
     assert.equal(payload.analyzedFiles, 1);
+    assert.deepEqual(payload.files, ["main.ts", "README.md"]);
     assert.equal(payload.graph.edges[0]?.status, "resolved");
 
     const source = await fetch(viewer.url + "api/source?path=main.ts");
     assert.equal(source.status, 200);
     assert.match(await source.text(), /function start/);
+    const unsupported = await fetch(viewer.url + "api/source?path=README.md");
+    assert.equal(unsupported.status, 404);
     const denied = await fetch(viewer.url + "api/source?path=..%2Fsecret.txt");
     assert.equal(denied.status, 404);
   } finally {
