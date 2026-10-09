@@ -2,9 +2,9 @@
 
 Trace is a local tool for exploring how code connects. It will map function calls, shared state, and other relationships into a navigable graph, with links back to the source that supports each connection.
 
-Trace currently has a read-only repository inventory and a JavaScript/TypeScript analysis adapter. The adapter identifies named functions and source-backed direct calls, including calls it cannot safely resolve. The CLI still reports only the file inventory; graph output and the interactive viewer are later features.
+Trace can inventory a repository and produce a source-backed call graph for Python, JavaScript, and TypeScript. It shows calls it cannot establish as unresolved, and Python method dispatch as possible. The interactive viewer is still to come.
 
-## Try the repository scan
+## Try repository analysis
 
 Install [Node.js 20.18 or newer](https://nodejs.org/) and run these commands in the repository:
 
@@ -12,9 +12,10 @@ Install [Node.js 20.18 or newer](https://nodejs.org/) and run these commands in 
 npm ci
 npm test
 node dist/src/cli/main.js scan .
+node dist/src/cli/main.js analyze .
 ~~~
 
-Use another path to scan a different project. Add --json to obtain all included files, their likely languages, and skipped paths. See the [scanning guide](docs/SCANNING.md) for the current CLI rules and the [JavaScript/TypeScript adapter guide](docs/JAVASCRIPT_TYPESCRIPT_ADAPTER.md) for current analysis coverage. The npm run check command checks TypeScript types without producing build files.
+Use another path to inspect a different project. Add `--json` to `scan` for the file inventory or to `analyze` for graph nodes, call edges, diagnostics, and source locations. Python analysis requires Python 3.10 or newer on the machine running Trace; set `TRACE_PYTHON` to a specific interpreter path if needed. See the [scanning guide](docs/SCANNING.md), [Python analysis guide](docs/PYTHON_ANALYSIS.md), and [JavaScript/TypeScript adapter guide](docs/JAVASCRIPT_TYPESCRIPT_ADAPTER.md) for current coverage. `npm run check` checks TypeScript types without producing build files.
 
 ## Repository layout
 
