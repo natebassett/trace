@@ -2,7 +2,7 @@
 
 Trace is a local tool for exploring how code connects. It will map function calls, shared state, and other relationships into a navigable graph, with links back to the source that supports each connection.
 
-Trace can inventory a repository and produce a source-backed call graph for Python, JavaScript, and TypeScript. It shows calls it cannot establish as unresolved, and Python method dispatch as possible. The interactive viewer is still to come.
+Trace can inventory a repository and produce a source-backed call graph for Python, JavaScript, and TypeScript. It shows calls it cannot establish as unresolved, and Python method dispatch as possible. Use the local browser viewer to search symbols, follow calls, and inspect their source evidence.
 
 ## Try repository analysis
 
@@ -13,9 +13,10 @@ npm ci
 npm test
 node dist/src/cli/main.js scan .
 node dist/src/cli/main.js analyze .
+node dist/src/cli/main.js view .
 ~~~
 
-Use another path to inspect a different project. Add `--json` to `scan` for the file inventory or to `analyze` for graph nodes, call edges, diagnostics, and source locations. Python analysis requires Python 3.10 or newer on the machine running Trace; set `TRACE_PYTHON` to a specific interpreter path if needed. See the [scanning guide](docs/SCANNING.md), [Python analysis guide](docs/PYTHON_ANALYSIS.md), and [JavaScript/TypeScript adapter guide](docs/JAVASCRIPT_TYPESCRIPT_ADAPTER.md) for current coverage. `npm run check` checks TypeScript types without producing build files.
+Use another path to inspect a different project. The `view` command prints a local browser address; open it and press Ctrl+C in the terminal when finished. For another repository, pass its folder path, for example `node dist/src/cli/main.js view "C:/path/to/project"`. See the [viewer guide](docs/VIEWER.md) for navigation and limits. Add `--json` to `scan` for the file inventory or to `analyze` for graph nodes, call edges, diagnostics, and source locations. Python analysis requires Python 3.10 or newer on the machine running Trace; set `TRACE_PYTHON` to a specific interpreter path if needed. See the [scanning guide](docs/SCANNING.md), [Python analysis guide](docs/PYTHON_ANALYSIS.md), and [JavaScript/TypeScript adapter guide](docs/JAVASCRIPT_TYPESCRIPT_ADAPTER.md) for current coverage. `npm run check` checks TypeScript types without producing build files.
 
 ## Repository layout
 

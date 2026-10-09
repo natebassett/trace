@@ -9,7 +9,7 @@ Trace is built in small branches. Each branch should add one reviewable capabili
 3. Run `npm ci` to install the exact dependency versions in `package-lock.json`.
 4. Run `npm test` to build the code and run its checks.
 
-The `scan` command inventories files and likely languages. The `analyze` command builds a validated call graph for Python, JavaScript, and TypeScript.
+The `scan` command inventories files and likely languages. The `analyze` command builds a validated call graph for Python, JavaScript, and TypeScript. The `view` command hosts that graph locally in a browser.
 
 ## Branch flow
 
@@ -41,4 +41,4 @@ Create a folder when its first real implementation lands. [Repository layout](RE
 | `npm run build` | Compiles TypeScript into the ignored `dist/` folder. |
 | `npm test` | Builds and runs the automated tests. |
 
-Repository discovery now feeds language adapters and the CLI exposes their validated graph. The next features can add graph queries and the viewer, while expanding adapter coverage based on real-repository results.
+Repository discovery feeds language adapters and the CLI exposes their validated graph through JSON and a local viewer. Future work can expand query depth, improve adapter coverage from real-repository results, and add the VS Code extension host.
